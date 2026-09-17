@@ -296,7 +296,7 @@ export const TalkToUsView: React.FC<TalkToUsViewProps> = ({ onBackToHome }) => {
       </div>
 
       {/* Tab 1: Disqus Embed with Proper React Framework SPA Lifecycle */}
-      {activeTab === 'disqus' && (
+      <div className={activeTab === 'disqus' ? 'block' : 'hidden'}>
         <section className="bg-white border border-gray-200 p-6 sm:p-8 rounded-xs shadow-2xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 mb-6 border-b border-gray-200 gap-3">
             <div>
@@ -387,10 +387,10 @@ export const TalkToUsView: React.FC<TalkToUsViewProps> = ({ onBackToHome }) => {
             </a>
           </noscript>
         </section>
-      )}
+      </div>
 
       {/* Tab 2: Send Letter to Editor */}
-      {activeTab === 'forum_letters' && (
+      <div className={activeTab === 'forum_letters' ? 'block' : 'hidden'}>
         <section className="bg-white border border-gray-200 p-6 sm:p-8 rounded-xs shadow-2xs">
           <div className="pb-4 mb-6 border-b border-gray-200">
             <h2 className="font-serif font-bold text-xl text-[#0c2340] flex items-center gap-2">
@@ -500,7 +500,7 @@ export const TalkToUsView: React.FC<TalkToUsViewProps> = ({ onBackToHome }) => {
             </form>
           )}
         </section>
-      )}
+      </div>
     </main>
   );
 };

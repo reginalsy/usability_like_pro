@@ -9,6 +9,46 @@
     <meta property="og:description" content="Singapore and world news portal with breaking headlines, editorial opinions, and multimedia visual stories." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      (function() {
+        var suppress = function(e) {
+          if (!e) return false;
+          var msg = typeof e === 'string' ? e : (e.message || '');
+          var file = (e && e.filename) || '';
+          if (
+            msg === 'Script error.' ||
+            msg.indexOf('Script error') !== -1 ||
+            file.indexOf('disqus') !== -1 ||
+            file.indexOf('disquscdn') !== -1
+          ) {
+            if (e.preventDefault) e.preventDefault();
+            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+            return true;
+          }
+          return false;
+        };
+        window.addEventListener('error', suppress, true);
+        var oldOnError = window.onerror;
+        window.onerror = function(message, source, lineno, colno, error) {
+          if (
+            message === 'Script error.' ||
+            (typeof message === 'string' && message.indexOf('Script error') !== -1) ||
+            (source && (source.indexOf('disqus') !== -1 || source.indexOf('disquscdn') !== -1))
+          ) {
+            return true;
+          }
+          if (typeof oldOnError === 'function') {
+            return oldOnError.apply(this, arguments);
+          }
+        };
+        window.addEventListener('unhandledrejection', function(e) {
+          var reason = '' + (e.reason && (e.reason.message || e.reason));
+          if (reason.indexOf('disqus') !== -1 || reason.indexOf('Script error') !== -1) {
+            e.preventDefault();
+          }
+        });
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400&family=Playfair+Display:ital,wght@0,500;0,600;0,700;0,800;0,900;1,400;1,600;1,700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Source+Sans+3:wght@400;500;600;700;800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap" rel="stylesheet">
