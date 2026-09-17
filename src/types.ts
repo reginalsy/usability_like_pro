@@ -47,6 +47,29 @@ export interface ArticleComment {
   likes: number;
 }
 
+export interface ReaderFeedbackComment {
+  id: string;
+  author: string;
+  email?: string;
+  role: 'Reader' | 'Verified Subscriber' | 'Community Contributor';
+  topic: string;
+  content: string;
+  timestamp: string;
+  source: 'disqus' | 'reader_form';
+  likes: number;
+  userLiked?: boolean;
+}
+
+export interface SubmittedLetter {
+  id: string;
+  author: string;
+  email: string;
+  topic: string;
+  content: string;
+  submittedAt: string;
+  status: 'Under Review' | 'Scheduled for Forum' | 'Archived';
+}
+
 declare global {
   interface Window {
     DISQUS?: {
@@ -58,6 +81,7 @@ declare global {
             identifier?: string;
             title?: string;
           };
+          callbacks?: Record<string, ((...args: any[]) => void)[]>;
         }) => void;
       }) => void;
     };
@@ -67,6 +91,11 @@ declare global {
         identifier?: string;
         title?: string;
       };
+      callbacks?: Record<string, ((...args: any[]) => void)[]>;
     }) => void;
+    disqus_shortname?: string;
+    disqus_identifier?: string;
+    disqus_url?: string;
   }
 }
+
