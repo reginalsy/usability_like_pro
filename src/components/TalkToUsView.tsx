@@ -1,81 +1,158 @@
-import React, { useState, useEffect } from 'react';
-import { DiscussionEmbed } from 'disqus-react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   MessageSquare,
   Mail,
-  Phone,
   ShieldCheck,
   Share2,
   Check,
   Clock,
   ArrowLeft,
   Send,
-  AlertTriangle,
+  AlertCircle,
   RefreshCw,
   ExternalLink,
   MessageCircle,
-  Sparkles,
-  HeartHandshake
+  User,
+  Heart,
+  ChevronRight
 } from 'lucide-react';
 
 interface TalkToUsViewProps {
   onBackToHome: () => void;
 }
 
+// Fixed canonical values for Disqus as requested
+const FIXED_PAGE_URL = 'https://straitstimes.com/talk-to-us';
+const FIXED_PAGE_IDENTIFIER = 'straits-times-talk-to-us-forum';
+const FIXED_PAGE_TITLE = 'Talk to Us: The Straits Times Reader Forum';
+
 export const TalkToUsView: React.FC<TalkToUsViewProps> = ({ onBackToHome }) => {
   const [copiedLink, setCopiedLink] = useState(false);
-  const [activeSubTab, setActiveSubTab] = useState<'disqus' | 'letter'>('disqus');
-  const [disqusReady, setDisqusReady] = useState(false);
-  const [showAdBlockHint, setShowAdBlockHint] = useState(false);
-  const [reloadKey, setReloadKey] = useState(0);
+  const [activeTab, setActiveTab] = useState<'disqus' | 'forum_letters'>('disqus');
+  const [disqusStatus, setDisqusStatus] = useState<'loading' | 'loaded' | 'blocked'>('loading');
+  const [reloadCounter, setReloadCounter] = useState(0);
 
-  // Form states for Direct Letter to Editor
+  // Form states for Submitting Letters to Editor
   const [letterName, setLetterName] = useState('');
   const [letterEmail, setLetterEmail] = useState('');
-  const [letterTopic, setLetterTopic] = useState('General Feedback');
+  const [letterTopic, setLetterTopic] = useState('Public Transport & Infrastructure');
   const [letterContent, setLetterContent] = useState('');
   const [letterSubmitted, setLetterSubmitted] = useState(false);
 
-  // Fixed canonical configuration values for Disqus universal code
-  const DISQUS_SHORTNAME = 'regina-13';
-  const FIXED_PAGE_URL = 'https://straitstimes.com/talk-to-us';
-  const FIXED_PAGE_IDENTIFIER = 'straits-times-talk-to-us-forum';
-  const FIXED_PAGE_TITLE = 'Talk to Us: The Straits Times Reader Forum';
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  const disqusConfig = {
-    url: FIXED_PAGE_URL,
-    identifier: FIXED_PAGE_IDENTIFIER,
-    title: FIXED_PAGE_TITLE,
-    language: 'en',
-    onReady: () => {
-      setDisqusReady(true);
-      setShowAdBlockHint(false);
-    }
-  };
-
-  // Timer to detect if third-party adblockers/trackers block Disqus
+  // Robust React single-page application Disqus embedding & reset
   useEffect(() => {
-    setDisqusReady(false);
-    const timer = setTimeout(() => {
-      // If after 4 seconds Disqus hasn't triggered onReady, notify user about possible adblocker
-      setShowAdBlockHint(true);
-    }, 4000);
+    let isMounted = true;
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-    return () => clearTimeout(timer);
-  }, [reloadKey]);
+    setDisqusStatus('loading');
+
+    const configureDisqus = function (this: {
+      page: {
+        url?: string;
+        identifier?: string;
+        title?: string;
+      };
+    }) {
+      this.page = this.page || {};
+      this.page.url = FIXED_PAGE_URL;
+      this.page.identifier = FIXED_PAGE_IDENTIFIER;
+      this.page.title = FIXED_PAGE_TITLE;
+    };
+
+    // Helper to safely reset or load Disqus
+    const initDisqus = () => {
+      try {
+        if (window.DISQUS && typeof window.DISQUS.reset === 'function') {
+          // Disqus is already loaded in the SPA - trigger official SPA reset
+          window.DISQUS.reset({
+            reload: true,
+            config: configureDisqus
+          });
+          if (isMounted) setDisqusStatus('loaded');
+        } else {
+          // Set global config
+          window.disqus_config = configureDisqus;
+
+          const existingScript = document.getElementById('disqus-embed-script') as HTMLScriptElement | null;
+          if (!existingScript) {
+            const script = document.createElement('script');
+            script.id = 'disqus-embed-script';
+            script.src = 'https://regina-13.disqus.com/embed.js';
+            script.setAttribute('data-timestamp', String(+new Date()));
+            script.async = true;
+
+            script.onload = () => {
+              if (isMounted) setDisqusStatus('loaded');
+            };
+
+            script.onerror = () => {
+              // Third-party script blocked by browser privacy/tracker shield or network
+              if (isMounted) setDisqusStatus('blocked');
+            };
+
+            (document.head || document.body).appendChild(script);
+          } else {
+            // Script tag already exists in DOM; wait for DISQUS global to be ready
+            let attempts = 0;
+            pollInterval = setInterval(() => {
+              attempts++;
+              if (window.DISQUS && typeof window.DISQUS.reset === 'function') {
+                if (pollInterval) clearInterval(pollInterval);
+                try {
+                  window.DISQUS.reset({
+                    reload: true,
+                    config: configureDisqus
+                  });
+                  if (isMounted) setDisqusStatus('loaded');
+                } catch (e) {
+                  console.warn('Disqus reset non-critical warning:', e);
+                }
+              } else if (attempts > 25) {
+                if (pollInterval) clearInterval(pollInterval);
+                if (isMounted) setDisqusStatus('loaded');
+              }
+            }, 150);
+          }
+        }
+      } catch (err) {
+        console.warn('Disqus initialization caught safely:', err);
+        if (isMounted) setDisqusStatus('blocked');
+      }
+    };
+
+    // Give DOM node a small tick to ensure #disqus_thread is rendered in DOM
+    timeoutId = setTimeout(() => {
+      initDisqus();
+    }, 50);
+
+    // Fallback timer: if Disqus takes longer than 4.5 seconds (e.g. adblocker in sandbox), show fallback notice
+    const fallbackTimer = setTimeout(() => {
+      if (isMounted && disqusStatus === 'loading') {
+        setDisqusStatus((prev) => (prev === 'loading' ? 'blocked' : prev));
+      }
+    }, 4500);
+
+    return () => {
+      isMounted = false;
+      if (pollInterval) clearInterval(pollInterval);
+      if (timeoutId) clearTimeout(timeoutId);
+      clearTimeout(fallbackTimer);
+    };
+  }, [reloadCounter]);
 
   const handleShare = () => {
     if (navigator.clipboard) {
-      navigator.clipboard.writeText(window.location.href);
+      navigator.clipboard.writeText(FIXED_PAGE_URL);
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2500);
     }
   };
 
-  const handleReloadDisqus = () => {
-    setDisqusReady(false);
-    setShowAdBlockHint(false);
-    setReloadKey((prev) => prev + 1);
+  const handleReload = () => {
+    setReloadCounter((prev) => prev + 1);
   };
 
   const handleLetterSubmit = (e: React.FormEvent) => {
@@ -86,7 +163,7 @@ export const TalkToUsView: React.FC<TalkToUsViewProps> = ({ onBackToHome }) => {
 
   return (
     <main className="max-w-5xl mx-auto px-4 py-8" id="talk-to-us-view">
-      {/* Breadcrumb Bar */}
+      {/* Top Navigation / Breadcrumbs */}
       <div className="flex items-center justify-between pb-3 border-b border-gray-200 text-xs mb-6">
         <button
           onClick={onBackToHome}
@@ -120,8 +197,8 @@ export const TalkToUsView: React.FC<TalkToUsViewProps> = ({ onBackToHome }) => {
         </h1>
 
         <p className="font-serif text-gray-700 text-base sm:text-lg leading-relaxed mt-3 max-w-3xl">
-          We welcome thoughtful perspectives, reader discussions, and news tips from our readers.
-          Join the conversation below via Disqus, or write directly to our editors and correspondents.
+          Welcome to The Straits Times open reader forum. We invite constructive perspectives, community discussions,
+          and tips from our readership in Singapore and worldwide.
         </p>
 
         <div className="flex flex-wrap items-center gap-4 mt-4 pt-3 border-t border-gray-100 text-xs text-gray-500 font-sans">
@@ -132,7 +209,7 @@ export const TalkToUsView: React.FC<TalkToUsViewProps> = ({ onBackToHome }) => {
           <span>•</span>
           <span className="flex items-center gap-1">
             <Clock className="w-3.5 h-3.5 text-gray-400" />
-            Active Reader Thread
+            24/7 Reader Community
           </span>
           <span>•</span>
           <button
@@ -145,9 +222,8 @@ export const TalkToUsView: React.FC<TalkToUsViewProps> = ({ onBackToHome }) => {
         </div>
       </section>
 
-      {/* Direct Newsroom Channels & Community Guidelines */}
+      {/* Direct Editorial Contacts & Guidelines */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-8">
-        {/* Direct Newsroom Contacts */}
         <div className="bg-[#f8fafc] border border-slate-200 p-5 rounded-xs">
           <h3 className="font-sans font-bold text-sm uppercase tracking-wider text-[#0c2340] flex items-center gap-2 mb-3">
             <Mail className="w-4 h-4 text-[#00427a]" />
@@ -177,11 +253,10 @@ export const TalkToUsView: React.FC<TalkToUsViewProps> = ({ onBackToHome }) => {
           </ul>
         </div>
 
-        {/* Community Standards */}
         <div className="bg-[#fafbfd] border border-slate-200 p-5 rounded-xs">
           <h3 className="font-sans font-bold text-sm uppercase tracking-wider text-[#0c2340] flex items-center gap-2 mb-3">
             <MessageCircle className="w-4 h-4 text-[#c8102e]" />
-            <span>Community Guidelines</span>
+            <span>Community Standards</span>
           </h3>
           <p className="text-xs text-gray-600 leading-relaxed font-sans mb-3">
             The Straits Times fosters open, constructive, and respectful dialogue. To ensure discussions remain insightful:
@@ -189,17 +264,17 @@ export const TalkToUsView: React.FC<TalkToUsViewProps> = ({ onBackToHome }) => {
           <ul className="space-y-1.5 text-xs text-gray-700 font-sans list-disc list-inside">
             <li>Keep debate civil and focused on issues, policies, and ideas.</li>
             <li>No personal insults, hate speech, defamation, or commercial spam.</li>
-            <li>Respect intellectual property and privacy rights.</li>
+            <li>Respect intellectual property and community privacy rights.</li>
           </ul>
         </div>
       </div>
 
-      {/* Sub-Tabs: Disqus Reader Forum vs Submit Letter to Editor */}
+      {/* Navigation Sub-Tabs */}
       <div className="flex border-b border-gray-300 mb-6 font-sans">
         <button
-          onClick={() => setActiveSubTab('disqus')}
+          onClick={() => setActiveTab('disqus')}
           className={`px-5 py-3 text-xs sm:text-sm font-bold uppercase tracking-wider cursor-pointer border-b-2 transition-all flex items-center gap-2 ${
-            activeSubTab === 'disqus'
+            activeTab === 'disqus'
               ? 'border-[#c8102e] text-[#0c2340] bg-gray-50'
               : 'border-transparent text-gray-500 hover:text-gray-900'
           }`}
@@ -208,21 +283,21 @@ export const TalkToUsView: React.FC<TalkToUsViewProps> = ({ onBackToHome }) => {
           <span>Disqus Reader Forum</span>
         </button>
         <button
-          onClick={() => setActiveSubTab('letter')}
+          onClick={() => setActiveTab('forum_letters')}
           className={`px-5 py-3 text-xs sm:text-sm font-bold uppercase tracking-wider cursor-pointer border-b-2 transition-all flex items-center gap-2 ${
-            activeSubTab === 'letter'
+            activeTab === 'forum_letters'
               ? 'border-[#c8102e] text-[#0c2340] bg-gray-50'
               : 'border-transparent text-gray-500 hover:text-gray-900'
           }`}
         >
           <Send className="w-4 h-4 text-[#c8102e]" />
-          <span>Send Letter to Editor</span>
+          <span>Submit Letter to Editor</span>
         </button>
       </div>
 
-      {/* Tab 1: Disqus Embed powered by disqus-react */}
-      {activeSubTab === 'disqus' && (
-        <section className="bg-white border border-gray-200 p-6 sm:p-8 rounded-xs shadow-2xs" data-purpose="disqus-container">
+      {/* Tab 1: Disqus Embed with Proper React Framework SPA Lifecycle */}
+      {activeTab === 'disqus' && (
+        <section className="bg-white border border-gray-200 p-6 sm:p-8 rounded-xs shadow-2xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 mb-6 border-b border-gray-200 gap-3">
             <div>
               <div className="flex items-center gap-2">
@@ -238,73 +313,73 @@ export const TalkToUsView: React.FC<TalkToUsViewProps> = ({ onBackToHome }) => {
 
             <div className="flex items-center gap-3 text-xs font-sans">
               <span className="text-[11px] text-gray-500 hidden sm:inline">
-                Thread: <code className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-mono text-[10px]">{FIXED_PAGE_IDENTIFIER}</code>
+                ID: <code className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-mono text-[10px]">{FIXED_PAGE_IDENTIFIER}</code>
               </span>
               <button
-                onClick={handleReloadDisqus}
+                onClick={handleReload}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 border border-gray-300 rounded hover:bg-gray-50 text-gray-700 text-xs cursor-pointer transition-colors"
                 title="Reload Disqus Thread"
               >
                 <RefreshCw className="w-3.5 h-3.5 text-[#00427a]" />
-                <span>Reload Thread</span>
+                <span>Reload</span>
               </button>
             </div>
           </div>
 
-          {/* Ad-blocker or Tracking Protection Advisory Notice */}
-          {showAdBlockHint && !disqusReady && (
-            <div className="mb-6 p-4 bg-amber-50/80 border border-amber-200 rounded-xs text-xs text-amber-900 flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <p className="font-bold text-sm">Disqus is taking longer than usual to load</p>
-                <p className="text-amber-800 leading-relaxed font-sans">
-                  If you are using an ad-blocker, Brave Shields, or strict privacy tracker blocking in your browser,
-                  third-party Disqus scripts (<code className="font-mono bg-amber-100 px-1 py-0.5 rounded text-[11px]">regina-13.disqus.com</code>)
-                  might be paused.
+          {/* If the sandbox or ad-blocker restricts Disqus script, show helpful guidance */}
+          {disqusStatus === 'blocked' && (
+            <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xs text-xs text-blue-950 flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+              <div className="space-y-1.5 flex-1">
+                <p className="font-bold text-sm">Disqus Embed Notice</p>
+                <p className="text-blue-900 leading-relaxed font-sans">
+                  The Disqus script has been configured for <code className="font-mono bg-blue-100 px-1 py-0.5 rounded text-[11px]">regina-13</code> with canonical URL <code className="font-mono bg-blue-100 px-1 py-0.5 rounded text-[11px]">{FIXED_PAGE_URL}</code>.
+                  In sandboxed iframe previews or browsers with strict tracking protection, third-party cookies or scripts may be sandboxed.
                 </p>
-                <div className="pt-2 flex flex-wrap gap-2">
+                <div className="pt-2 flex flex-wrap items-center gap-3">
                   <a
                     href="https://disqus.com/home/forums/regina-13/"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 px-3 py-1 bg-white border border-amber-300 rounded text-amber-900 font-bold hover:bg-amber-100 transition-colors cursor-pointer text-xs"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#00427a] text-white rounded font-bold hover:bg-[#0c2340] transition-colors cursor-pointer text-xs"
                   >
-                    <span>Open regina-13 on Disqus</span>
-                    <ExternalLink className="w-3 h-3" />
+                    <span>Open Forum on Disqus</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
                   </a>
                   <button
-                    onClick={handleReloadDisqus}
-                    className="px-3 py-1 bg-amber-700 text-white rounded font-bold hover:bg-amber-800 transition-colors cursor-pointer text-xs"
+                    onClick={handleReload}
+                    className="px-3 py-1.5 bg-white border border-blue-300 text-blue-900 rounded font-bold hover:bg-blue-100 transition-colors cursor-pointer text-xs"
                   >
-                    Try Reloading
+                    Retry Loading
                   </button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Loading Skeleton while initializing */}
-          {!disqusReady && (
+          {/* Loading Skeleton while waiting for Disqus */}
+          {disqusStatus === 'loading' && (
             <div className="space-y-4 py-4 animate-pulse">
-              <div className="h-4 bg-gray-200 rounded w-1/4"></div>
-              <div className="h-20 bg-gray-100 rounded"></div>
-              <div className="h-4 bg-gray-200 rounded w-1/3"></div>
-              <div className="space-y-2">
-                <div className="h-12 bg-gray-50 rounded border border-gray-100"></div>
-                <div className="h-12 bg-gray-50 rounded border border-gray-100"></div>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-gray-200 rounded-full"></div>
+                <div className="space-y-1.5 flex-1">
+                  <div className="h-3.5 bg-gray-200 rounded w-1/4"></div>
+                  <div className="h-3 bg-gray-100 rounded w-1/3"></div>
+                </div>
               </div>
+              <div className="h-16 bg-gray-100 rounded border border-gray-200"></div>
+              <div className="h-4 bg-gray-200 rounded w-28"></div>
             </div>
           )}
 
-          {/* The Official Disqus React Framework Component */}
-          <div className={`transition-opacity duration-300 ${disqusReady ? 'opacity-100' : 'opacity-90'}`}>
-            <DiscussionEmbed
-              key={`disqus-${reloadKey}`}
-              shortname={DISQUS_SHORTNAME}
-              config={disqusConfig}
-            />
-          </div>
+          {/* The primary Universal Code Disqus Thread Element */}
+          <div
+            ref={containerRef}
+            id="disqus_thread"
+            className="min-h-[300px] w-full"
+          ></div>
 
+          {/* Official Universal Code Noscript Fallback */}
           <noscript>
             Please enable JavaScript to view the{' '}
             <a href="https://disqus.com/?ref_noscript" className="text-[#00427a] underline">
@@ -314,8 +389,8 @@ export const TalkToUsView: React.FC<TalkToUsViewProps> = ({ onBackToHome }) => {
         </section>
       )}
 
-      {/* Tab 2: Send Letter to Editor form */}
-      {activeSubTab === 'letter' && (
+      {/* Tab 2: Send Letter to Editor */}
+      {activeTab === 'forum_letters' && (
         <section className="bg-white border border-gray-200 p-6 sm:p-8 rounded-xs shadow-2xs">
           <div className="pb-4 mb-6 border-b border-gray-200">
             <h2 className="font-serif font-bold text-xl text-[#0c2340] flex items-center gap-2">
@@ -323,7 +398,7 @@ export const TalkToUsView: React.FC<TalkToUsViewProps> = ({ onBackToHome }) => {
               <span>Submit a Letter to The Straits Times Forum</span>
             </h2>
             <p className="text-xs text-gray-500 mt-1 font-sans">
-              Letters submitted with verifiable contact details may be selected for publication in our daily print and digital broadsheet editions.
+              Selected reader letters are published in our daily print broadsheet and online digital editions.
             </p>
           </div>
 
@@ -332,9 +407,9 @@ export const TalkToUsView: React.FC<TalkToUsViewProps> = ({ onBackToHome }) => {
               <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto">
                 <Check className="w-6 h-6" />
               </div>
-              <h3 className="font-bold text-emerald-900 text-lg">Thank You for Writing to Us</h3>
+              <h3 className="font-bold text-emerald-900 text-lg">Letter Transmitted to Forum Desk</h3>
               <p className="text-xs sm:text-sm text-emerald-800 max-w-md mx-auto leading-relaxed">
-                Your letter regarding <span className="font-bold">"{letterTopic}"</span> has been transmitted to the Straits Times Forum desk for editorial review.
+                Thank you, <span className="font-bold">{letterName}</span>. Your submission regarding <span className="font-bold">"{letterTopic}"</span> has been logged for review by our editorial team.
               </p>
               <button
                 onClick={() => {
@@ -345,7 +420,7 @@ export const TalkToUsView: React.FC<TalkToUsViewProps> = ({ onBackToHome }) => {
                 }}
                 className="mt-3 px-4 py-2 bg-emerald-700 text-white rounded-xs text-xs font-bold uppercase tracking-wider hover:bg-emerald-800 cursor-pointer"
               >
-                Send Another Note
+                Send Another Letter
               </button>
             </div>
           ) : (
@@ -358,7 +433,7 @@ export const TalkToUsView: React.FC<TalkToUsViewProps> = ({ onBackToHome }) => {
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Dr. Samuel Chen"
+                    placeholder="e.g. Samuel Chen"
                     value={letterName}
                     onChange={(e) => setLetterName(e.target.value)}
                     className="w-full p-2.5 border border-gray-300 rounded-2xs focus:outline-hidden focus:border-[#00427a]"
@@ -381,19 +456,19 @@ export const TalkToUsView: React.FC<TalkToUsViewProps> = ({ onBackToHome }) => {
 
               <div>
                 <label className="block font-bold text-gray-800 mb-1.5">
-                  Subject / Topic
+                  Subject / Category
                 </label>
                 <select
                   value={letterTopic}
                   onChange={(e) => setLetterTopic(e.target.value)}
                   className="w-full p-2.5 border border-gray-300 rounded-2xs focus:outline-hidden focus:border-[#00427a] bg-white text-gray-800"
                 >
-                  <option>General Feedback</option>
-                  <option>Response to Recent Article</option>
-                  <option>Public Policy &amp; Singapore Society</option>
-                  <option>Transport &amp; Urban Infrastructure</option>
-                  <option>Education &amp; Community</option>
-                  <option>Whistleblower / Investigative Lead</option>
+                  <option>Public Transport &amp; Infrastructure</option>
+                  <option>Cost of Living &amp; Economy</option>
+                  <option>Education &amp; Lifelong Learning</option>
+                  <option>Healthcare &amp; Aging Population</option>
+                  <option>Environmental Sustainability</option>
+                  <option>General Feedback / News Tip</option>
                 </select>
               </div>
 
@@ -404,7 +479,7 @@ export const TalkToUsView: React.FC<TalkToUsViewProps> = ({ onBackToHome }) => {
                 <textarea
                   rows={6}
                   required
-                  placeholder="Share your views or news tip with the editorial team (recommended: 200 - 400 words)..."
+                  placeholder="Share your perspective (recommended 250 - 400 words)..."
                   value={letterContent}
                   onChange={(e) => setLetterContent(e.target.value)}
                   className="w-full p-3 border border-gray-300 rounded-2xs focus:outline-hidden focus:border-[#00427a] font-serif text-sm leading-relaxed"
